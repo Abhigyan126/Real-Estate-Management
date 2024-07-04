@@ -2,6 +2,7 @@ import json
 import tkinter as tk
 from tkinter import messagebox, simpledialog, Toplevel, Label, Entry, Button, ttk
 from PIL import Image, ImageTk
+import joblib  # Assuming your prediction model is saved using joblib
 
 # Sample data structure
 properties = []
@@ -15,6 +16,23 @@ FILENAME = 'properties.json'
 # Sorting variables
 sort_column = None
 sort_descending = False
+
+# Load the prediction model
+lr_clf_loaded = joblib.load('linear_regression_model.pkl')  # Update with your actual model file
+
+# Function to predict price
+def predict_price(total_sqft, bath, bhk):
+    if lr_clf_loaded:
+        try:
+            total_sqft = float(total_sqft)
+            bath = float(bath)
+            bhk = int(bhk)
+            price_prediction = lr_clf_loaded.predict([[total_sqft, bath, bhk]])
+            return round(price_prediction[0], 2)  # Return rounded prediction
+        except ValueError:
+            messagebox.showwarning("Warning", "Total Sqft, Bath, and BHK must be numeric values.")
+    else:
+        messagebox.showwarning("Warning", "Prediction model not found or loaded.")
 
 # Function to add a new property
 def add_property(property):
@@ -78,9 +96,16 @@ def reset_properties():
 def update_table():
     tree.delete(*tree.get_children())
     for prop in properties:
-        tree.insert('', 'end', values=(prop['name'], prop['bedrooms'], prop['bathrooms'], prop['price']))
+        tree.insert('', 'end', values=(prop['name'], prop['total_sqft'], prop['bath'], prop['price'], prop['bhk']))
 
-# Function to sort table by column
+sort_directions = {
+    'name': '',
+    'total_sqft': '',
+    'bath': '',
+    'price': '',
+    'bhk': ''
+}
+
 def sort_table(column):
     global sort_column, sort_descending
     if sort_column == column:
@@ -91,6 +116,17 @@ def sort_table(column):
 
     properties.sort(key=lambda x: x[column], reverse=sort_descending)
     update_table()
+    
+    for col in sort_directions:
+        sort_directions[col] = ''
+    
+    sort_directions[column] = ' ↓' if sort_descending else ' ↑'
+
+    tree.heading('Name', text='Name' + sort_directions['name'], command=lambda: sort_table('name'))
+    tree.heading('Total Sqft', text='Total Sqft' + sort_directions['total_sqft'], command=lambda: sort_table('total_sqft'))
+    tree.heading('Bath', text='Bath' + sort_directions['bath'], command=lambda: sort_table('bath'))
+    tree.heading('Price', text='Price' + sort_directions['price'], command=lambda: sort_table('price'))
+    tree.heading('BHK', text='BHK' + sort_directions['bhk'], command=lambda: sort_table('bhk'))
 
 # Function to display the property form
 def show_property_form(property=None, title="Add Property", callback=None):
@@ -99,28 +135,36 @@ def show_property_form(property=None, title="Add Property", callback=None):
     
     def on_submit():
         name = entry_name.get().strip()
-        bedrooms = entry_bedrooms.get().strip()
-        bathrooms = entry_bathrooms.get().strip()
+        total_sqft = entry_total_sqft.get().strip()
+        bath = entry_bath.get().strip()
         price = entry_price.get().strip()
+        bhk = entry_bhk.get().strip()
         
         if not name:
             messagebox.showwarning("Warning", "Name cannot be empty.")
             return
         
         try:
-            bedrooms = int(bedrooms) if bedrooms else None
-            bathrooms = int(bathrooms) if bathrooms else None
+            total_sqft = float(total_sqft) if total_sqft else None
+            bath = float(bath) if bath else None
             price = float(price) if price else None
+            bhk = int(bhk) if bhk else None
         except ValueError:
-            messagebox.showwarning("Warning", "Bedrooms and bathrooms must be integers, and price must be a number.")
+            messagebox.showwarning("Warning", "Total Sqft, Bath, and Price must be numbers, and BHK must be an integer.")
             return
+        
+        # Predict price
+        predicted_price = predict_price(total_sqft, bath, bhk)
+        if predicted_price is not None:
+            price = predicted_price  # Update price with predicted value
         
         if callback:
             callback({
                 'name': name,
-                'bedrooms': bedrooms,
-                'bathrooms': bathrooms,
-                'price': price
+                'total_sqft': total_sqft,
+                'bath': bath,
+                'price': price,
+                'bhk': bhk
             })
         
         form.destroy()
@@ -130,25 +174,30 @@ def show_property_form(property=None, title="Add Property", callback=None):
     entry_name = Entry(form)
     entry_name.grid(row=0, column=1, padx=5, pady=5)
     
-    Label(form, text="Bedrooms:").grid(row=1, column=0, padx=5, pady=5)
-    entry_bedrooms = Entry(form)
-    entry_bedrooms.grid(row=1, column=1, padx=5, pady=5)
+    Label(form, text="Total Sqft:").grid(row=1, column=0, padx=5, pady=5)
+    entry_total_sqft = Entry(form)
+    entry_total_sqft.grid(row=1, column=1, padx=5, pady=5)
     
-    Label(form, text="Bathrooms:").grid(row=2, column=0, padx=5, pady=5)
-    entry_bathrooms = Entry(form)
-    entry_bathrooms.grid(row=2, column=1, padx=5, pady=5)
+    Label(form, text="Bath:").grid(row=2, column=0, padx=5, pady=5)
+    entry_bath = Entry(form)
+    entry_bath.grid(row=2, column=1, padx=5, pady=5)
     
     Label(form, text="Price:").grid(row=3, column=0, padx=5, pady=5)
     entry_price = Entry(form)
     entry_price.grid(row=3, column=1, padx=5, pady=5)
     
+    Label(form, text="BHK:").grid(row=4, column=0, padx=5, pady=5)
+    entry_bhk = Entry(form)
+    entry_bhk.grid(row=4, column=1, padx=5, pady=5)
+    
     if property:
         entry_name.insert(0, property['name'])
-        entry_bedrooms.insert(0, property.get('bedrooms', ''))
-        entry_bathrooms.insert(0, property.get('bathrooms', ''))
+        entry_total_sqft.insert(0, property.get('total_sqft', ''))
+        entry_bath.insert(0, property.get('bath', ''))
         entry_price.insert(0, property.get('price', ''))
+        entry_bhk.insert(0, property.get('bhk', ''))
     
-    Button(form, text="Submit", command=on_submit).grid(row=4, columnspan=2, pady=10)
+    Button(form, text="Submit", command=on_submit).grid(row=5, columnspan=2, pady=10)
     form.transient(root)
     form.grab_set()
     root.wait_window(form)
@@ -179,31 +228,34 @@ def search_property_gui():
 
     def on_submit():
         name = entry_name.get().strip()
-        bedrooms = entry_bedrooms.get().strip()
-        bathrooms = entry_bathrooms.get().strip()
+        total_sqft = entry_total_sqft.get().strip()
+        bath = entry_bath.get().strip()
         min_price = entry_min_price.get().strip()
         max_price = entry_max_price.get().strip()
+        bhk = entry_bhk.get().strip()
 
         try:
-            bedrooms = int(bedrooms) if bedrooms else None
-            bathrooms = int(bathrooms) if bathrooms else None
+            total_sqft = float(total_sqft) if total_sqft else None
+            bath = float(bath) if bath else None
             min_price = float(min_price) if min_price else None
             max_price = float(max_price) if max_price else None
+            bhk = int(bhk) if bhk else None
         except ValueError:
-            messagebox.showwarning("Warning", "Bedrooms and bathrooms must be integers, and price must be a number.")
+            messagebox.showwarning("Warning", "Total Sqft, Bath, and Price must be numbers, and BHK must be an integer.")
             return
 
         filtered_properties = [prop for prop in properties if
                                (not name or prop['name'].lower() == name.lower()) and
-                               (bedrooms is None or prop['bedrooms'] == bedrooms) and
-                               (bathrooms is None or prop['bathrooms'] == bathrooms) and
+                               (total_sqft is None or (prop['total_sqft'] is not None and prop['total_sqft'] == total_sqft)) and
+                               (bath is None or (prop['bath'] is not None and prop['bath'] == bath)) and
                                (min_price is None or (prop['price'] is not None and prop['price'] >= min_price)) and
-                               (max_price is None or (prop['price'] is not None and prop['price'] <= max_price))]
+                               (max_price is None or (prop['price'] is not None and prop['price'] <= max_price)) and
+                               (bhk is None or (prop['bhk'] is not None and prop['bhk'] == bhk))]
 
         if filtered_properties:
             tree.delete(*tree.get_children())
             for prop in filtered_properties:
-                tree.insert('', 'end', values=(prop['name'], prop['bedrooms'], prop['bathrooms'], prop['price']))
+                tree.insert('', 'end', values=(prop['name'], prop['total_sqft'], prop['bath'], prop['price'], prop['bhk']))
             form.destroy()
         else:
             messagebox.showinfo("Search Result", "No properties found matching the criteria.")
@@ -212,13 +264,13 @@ def search_property_gui():
     entry_name = Entry(form)
     entry_name.grid(row=0, column=1, padx=5, pady=5)
 
-    Label(form, text="Bedrooms:").grid(row=1, column=0, padx=5, pady=5)
-    entry_bedrooms = Entry(form)
-    entry_bedrooms.grid(row=1, column=1, padx=5, pady=5)
+    Label(form, text="Total Sqft:").grid(row=1, column=0, padx=5, pady=5)
+    entry_total_sqft = Entry(form)
+    entry_total_sqft.grid(row=1, column=1, padx=5, pady=5)
 
-    Label(form, text="Bathrooms:").grid(row=2, column=0, padx=5, pady=5)
-    entry_bathrooms = Entry(form)
-    entry_bathrooms.grid(row=2, column=1, padx=5, pady=5)
+    Label(form, text="Bath:").grid(row=2, column=0, padx=5, pady=5)
+    entry_bath = Entry(form)
+    entry_bath.grid(row=2, column=1, padx=5, pady=5)
 
     Label(form, text="Min Price:").grid(row=3, column=0, padx=5, pady=5)
     entry_min_price = Entry(form)
@@ -228,7 +280,11 @@ def search_property_gui():
     entry_max_price = Entry(form)
     entry_max_price.grid(row=4, column=1, padx=5, pady=5)
 
-    Button(form, text="Submit", command=on_submit).grid(row=5, columnspan=2, pady=10)
+    Label(form, text="BHK:").grid(row=5, column=0, padx=5, pady=5)
+    entry_bhk = Entry(form)
+    entry_bhk.grid(row=5, column=1, padx=5, pady=5)
+
+    Button(form, text="Submit", command=on_submit).grid(row=6, columnspan=2, pady=10)
     form.transient(root)
     form.grab_set()
     root.wait_window(form)
@@ -272,11 +328,12 @@ btn_save = tk.Button(frame_buttons, text="Save to File", image=icon_save, compou
 btn_save.grid(row=0, column=5, padx=5)
 
 # Create treeview with columns
-tree = ttk.Treeview(root, columns=('Name', 'Bedrooms', 'Bathrooms', 'Price'), show='headings')
+tree = ttk.Treeview(root, columns=('Name', 'Total Sqft', 'Bath', 'Price', 'BHK'), show='headings')
 tree.heading('Name', text='Name', command=lambda: sort_table('name'))
-tree.heading('Bedrooms', text='Bedrooms', command=lambda: sort_table('bedrooms'))
-tree.heading('Bathrooms', text='Bathrooms', command=lambda: sort_table('bathrooms'))
+tree.heading('Total Sqft', text='Total Sqft', command=lambda: sort_table('total_sqft'))
+tree.heading('Bath', text='Bath', command=lambda: sort_table('bath'))
 tree.heading('Price', text='Price', command=lambda: sort_table('price'))
+tree.heading('BHK', text='BHK', command=lambda: sort_table('bhk'))
 tree.pack(padx=10, pady=10)
 
 # Load initial data
